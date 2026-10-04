@@ -26,7 +26,7 @@ type V2Context = {
     hook(
       name: "context",
       fn: (e: { system: Array<{ type: "text"; text: string }> }) => void | Promise<void>,
-    ): unknown;
+    ): Promise<unknown> | unknown;
   };
 };
 
@@ -63,12 +63,15 @@ export async function setup(ctx: unknown): Promise<void> {
 
   await ensureCollection(["init", "--name", project], { cwd: dir, log });
 
+  // Built once: the host replays the transform on reloads and caches codecs by object identity.
+  const inputs = new Map(TOOLS.map((spec) => [spec.name, toJsonSchema(spec)]));
+
   await tool.transform((t) => {
     for (const spec of TOOLS) {
       t.add({
         name: spec.name,
         description: spec.description,
-        input: toJsonSchema(spec),
+        input: inputs.get(spec.name)!,
         options: { codemode: false },
         async execute(input, tctx) {
           const opts: RunOpts = { cwd: dir, log, signal: tctx?.signal };
@@ -78,7 +81,7 @@ export async function setup(ctx: unknown): Promise<void> {
     }
   });
 
-  session.hook("context", (e) => {
+  await session.hook("context", (e) => {
     e.system.push({ type: "text", text: MEMORY_INSTRUCTIONS });
   });
 }
