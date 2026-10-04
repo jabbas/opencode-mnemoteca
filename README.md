@@ -37,6 +37,33 @@ npm install
 npm run build
 ```
 
+## OpenCode v2
+
+The package exports both plugin APIs from one entry point. OpenCode v1 loads the
+existing `server` export and behaves exactly as before. OpenCode v2 (tested on
+2.0.22) loads the `setup` export.
+
+Install it in your v2 configuration under the `plugins` key (the legacy `plugin`
+key is also read):
+
+```json
+{
+  "plugins": ["opencode-mnemoteca"]
+}
+```
+
+Until the package is published, point the entry at a local checkout (for example
+a git submodule or path) after `npm install && npm run build`.
+
+On v2:
+
+- The five `memory_*` tools are registered with `codemode: false`, so they stay
+  directly callable instead of being folded into code mode.
+- The memory instructions are injected into the system context every turn. v2
+  has no compaction-context hook whose content survives summarization, so the
+  v1 compaction injection has no equivalent.
+- The v2 plugin context has no logging facility, so the plugin logs nothing.
+
 ## Upgrade from opencode-mnemosyne
 
 If you already used the old OpenCode plugin, stop OpenCode before you change the

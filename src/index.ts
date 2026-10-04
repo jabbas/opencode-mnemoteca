@@ -8,6 +8,7 @@ import {
   type RunOpts,
   type ToolSpec,
 } from "./core.js";
+import { setup } from "./v2.js";
 
 function toV1Args(spec: ToolSpec) {
   const args: Record<string, any> = {};
@@ -70,3 +71,5 @@ export const MnemotecaPlugin: Plugin = async (ctx) => {
     },
   };
 };
+
+export default { id: "mnemoteca", server: MnemotecaPlugin, setup };
