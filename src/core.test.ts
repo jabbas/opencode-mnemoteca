@@ -57,6 +57,22 @@ test("run throws stderr on non-zero exit", async () => {
   await assert.rejects(run(["search", "x"], { cwd: "/work/p", log }), new Error("boom"));
 });
 
+test("run surfaces real stderr that contains 'not found' instead of install guidance", async () => {
+  installBunBoundary({ stdout: "", stderr: "Error: document 487 not found\n", exited: 1 });
+  await assert.rejects(
+    run(["delete", "487"], { cwd: "/work/p", log }),
+    new Error("Error: document 487 not found"),
+  );
+});
+
+test("run falls back to an exit-code message when stderr is empty", async () => {
+  installBunBoundary({ stdout: "", stderr: "", exited: 2 });
+  await assert.rejects(
+    run(["delete", "5"], { cwd: "/work/p", log }),
+    new Error("mnemoteca delete failed (exit 2)"),
+  );
+});
+
 test("run returns install guidance when spawn throws ENOENT", async () => {
   globalThis.Bun = {
     spawn() {

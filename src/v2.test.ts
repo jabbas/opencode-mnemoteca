@@ -56,6 +56,24 @@ type AddedTool = {
   execute(input: any, tctx?: { signal: AbortSignal }): Promise<{ content: string }>;
 };
 
+// The v2 adapter must never write to the console: console.* corrupts the OpenCode v2 TUI.
+// Spy on every console method so a test can assert that nothing was written.
+const CONSOLE_METHODS = ["log", "info", "warn", "error", "debug"] as const;
+
+function spyConsole(): { calls: string[]; restore(): void } {
+  const calls: string[] = [];
+  const originals = CONSOLE_METHODS.map((m) => [m, console[m]] as const);
+  for (const m of CONSOLE_METHODS) {
+    console[m] = (...args: unknown[]) => void calls.push(`${m}: ${args.map(String).join(" ")}`);
+  }
+  return {
+    calls,
+    restore() {
+      for (const [m, fn] of originals) console[m] = fn;
+    },
+  };
+}
+
 function fakeV2Ctx(directory: string) {
   const tools: AddedTool[] = [];
   const hooks: Array<{ name: string; fn: (e: any) => unknown }> = [];
@@ -149,6 +167,34 @@ test("non-zero exit surfaces stderr", async () => {
   await assert.rejects(byName(tools, "memory_recall").execute({ query: "x" }), new Error("bad"));
 });
 
+test("non-zero exit with 'not found' stderr surfaces the real message, not install guidance", async () => {
+  const { ctx, tools } = fakeV2Ctx("/tmp/acme");
+  installBunBoundary();
+  await setup(ctx);
+  installBunBoundary({ stdout: "", stderr: "Error: document 999 not found\n", exited: 1 });
+
+  await assert.rejects(
+    byName(tools, "memory_delete").execute({ id: 999 }),
+    new Error("Error: document 999 not found"),
+  );
+});
+
+test("failing execute writes nothing to the console", async () => {
+  const { ctx, tools } = fakeV2Ctx("/tmp/acme");
+  installBunBoundary();
+  await setup(ctx);
+  installBunBoundary({ stdout: "", stderr: "boom", exited: 1 });
+
+  const spy = spyConsole();
+  try {
+    await assert.rejects(byName(tools, "memory_recall").execute({ query: "x" }), new Error("boom"));
+  }
+  finally {
+    spy.restore();
+  }
+  assert.deepEqual(spy.calls, []);
+});
+
 test("abort rejects", async () => {
   const { ctx, tools } = fakeV2Ctx("/tmp/acme");
   installBunBoundary();
@@ -192,12 +238,20 @@ test("guard: v1-shaped ctx does nothing", async () => {
 test("missing binary", async () => {
   const { ctx, tools } = fakeV2Ctx("/tmp/acme");
   installBunBoundary({ throws: new Error("ENOENT") });
-  await setup(ctx);
 
-  const result = await byName(tools, "memory_recall").execute({ query: "x" });
+  const spy = spyConsole();
+  let result: { content: string };
+  try {
+    await setup(ctx);
+    result = await byName(tools, "memory_recall").execute({ query: "x" });
+  }
+  finally {
+    spy.restore();
+  }
   assert.deepEqual(result, {
     content: "Error: mnemoteca binary not found. Install it: https://github.com/gandazgul/mnemoteca#install",
   });
+  assert.deepEqual(spy.calls, []);
 });
 
 test("default export shape", () => {

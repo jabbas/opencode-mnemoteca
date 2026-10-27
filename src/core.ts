@@ -55,38 +55,35 @@ function spawnOptions(
 export async function run(args: string[], opts: RunOpts): Promise<string> {
   const { log } = opts;
   await log.debug(`Executing: mnemoteca ${args.join(" ")}`);
+
+  let proc: { stdout: ReadableStream; stderr: ReadableStream; exited: Promise<number> };
   try {
     // @ts-ignore - Bun is globally available in the OpenCode environment.
-    const proc = Bun.spawn(["mnemoteca", ...args], spawnOptions(opts, "pipe"));
-
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-
-    if (exitCode !== 0) {
-      await log.error(`Execution failed (code ${exitCode}): ${stderr}`);
-      throw new Error(stderr.trim() || `mnemoteca ${args[0]} failed`);
-    }
-
-    // Mnemoteca can write output to stderr in older compatible paths. Use whichever has content.
-    const output = stdout || stderr;
-    await log.debug(`Execution successful. Output size: ${output.length}`);
-    return output;
+    proc = Bun.spawn(["mnemoteca", ...args], spawnOptions(opts, "pipe"));
   }
   catch (e: unknown) {
-    await log.error(`Execution error: ${e instanceof Error ? e.stack : String(e)}`);
-    const msg = e instanceof Error ? e.message : String(e);
-    if (
-      msg.includes("not found") ||
-      msg.includes("ENOENT") ||
-      msg.includes("No such file")
-    ) {
-      return "Error: mnemoteca binary not found. Install it: https://github.com/gandazgul/mnemoteca#install";
-    }
-    throw e;
+    // Only a failure to start the process itself (e.g. ENOENT on the executable)
+    // means the binary is missing. A non-zero exit is a normal domain error and is
+    // handled below — never classify CLI output by substring.
+    await log.error(`Spawn failed: ${String(e)}`);
+    return "Error: mnemoteca binary not found. Install it: https://github.com/gandazgul/mnemoteca#install";
   }
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    await log.error(`Execution failed (code ${exitCode}): ${stderr}`);
+    throw new Error(stderr.trim() || `mnemoteca ${args[0]} failed (exit ${exitCode})`);
+  }
+
+  // Mnemoteca can write output to stderr in older compatible paths. Use whichever has content.
+  const output = stdout || stderr;
+  await log.debug(`Execution successful. Output size: ${output.length}`);
+  return output;
 }
 
 /**
